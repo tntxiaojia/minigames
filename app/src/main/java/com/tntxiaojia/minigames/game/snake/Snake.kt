@@ -51,7 +51,7 @@ class Snake {
     fun step(dt: Float) {
         if (over) return
         acc += dt
-        val interval = (0.16f - score * 0.0012f).coerceAtLeast(0.06f)
+        val interval = (0.24f - score * 0.0008f).coerceAtLeast(0.10f)
         while (acc >= interval) {
             acc -= interval
             if (dirQueue.isNotEmpty()) dir = dirQueue.removeFirst()

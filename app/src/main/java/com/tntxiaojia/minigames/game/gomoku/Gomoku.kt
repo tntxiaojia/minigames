@@ -2,10 +2,13 @@ package com.tntxiaojia.minigames.game.gomoku
 
 import kotlin.random.Random
 
-/** 五子棋逻辑引擎：15x15 棋盘 + 简单贪心人机。黑(1)先行。 */
+/**
+ * 五子棋逻辑引擎：15x15 棋盘，黑(1)先行。
+ * 难度：EASY/NORMAL 为启发式贪心；HARD 为 4 层 αβ；DEBUG（隐藏）为组合棋型 + VCF/VCT 算杀 + 带时间预算的深层 αβ。
+ */
 class Gomoku {
     enum class Mode { HUMAN_AI, HUMAN_HUMAN }
-    enum class Difficulty { EASY, NORMAL, HARD }
+    enum class Difficulty { EASY, NORMAL, HARD, DEBUG }
 
     data class View(
         val cells: IntArray,
@@ -21,10 +24,27 @@ class Gomoku {
         private const val EMPTY = 0
         private const val BLACK = 1
         private const val WHITE = 2
+
         private const val HARD_DEPTH = 4
         private const val HARD_BRANCH = 8
+        private const val DEBUG_DEPTH = 6
+        private const val DEBUG_BRANCH = 12
+        private const val DEBUG_TIME_MS = 500L
+        private const val VCF_DEPTH = 12
+
         private const val WIN_SCORE = Int.MAX_VALUE / 2
         private const val INF = Int.MAX_VALUE / 4
+
+        private const val LV_NONE = 0
+        private const val LV_ONE = 1
+        private const val LV_TWO = 2
+        private const val LV_OPEN_TWO = 3
+        private const val LV_SLEEP_THREE = 4
+        private const val LV_OPEN_THREE = 5
+        private const val LV_FOUR = 6
+        private const val LV_OPEN_FOUR = 7
+        private const val LV_FIVE = 8
+
         private val DIRS = arrayOf(
             0 to 1, 1 to 0, 1 to 1, 1 to -1,
         )
@@ -42,6 +62,8 @@ class Gomoku {
         private set
     var difficulty = Difficulty.NORMAL
         private set
+
+    private var searchDeadline = Long.MAX_VALUE
 
     fun start(newMode: Mode, newDifficulty: Difficulty = difficulty) {
         mode = newMode
@@ -106,9 +128,12 @@ class Gomoku {
             Difficulty.EASY -> easyPick(empties)
             Difficulty.NORMAL -> greedyPick(empties)
             Difficulty.HARD -> hardPick(empties)
+            Difficulty.DEBUG -> debugPick(empties)
         }
         doPlace(pick % N, pick / N, WHITE)
     }
+
+    // ---------------- 低难度 ----------------
 
     private fun greedyPick(empties: List<Int>): Int {
         var bestIdx = empties[Random.nextInt(empties.size)]
@@ -138,11 +163,13 @@ class Gomoku {
         return bestIdx
     }
 
-    /** 困难：先赢/先堵，再做 4 层极大极小搜索（alpha-beta + 候选剪枝）。 */
+    // ---------------- 困难（4 层 αβ） ----------------
+
     private fun hardPick(empties: List<Int>): Int {
+        searchDeadline = Long.MAX_VALUE
         for (i in empties) if (pointScore(i % N, i / N, WHITE) >= 2_000_000) return i
         for (i in empties) if (pointScore(i % N, i / N, BLACK) >= 2_000_000) return i
-        val cands = orderedCandidates()
+        val cands = orderedCandidates(HARD_BRANCH)
         if (cands.isEmpty()) return empties[Random.nextInt(empties.size)]
         var bestIdx = cands[0]
         var bestValue = -INF
@@ -151,7 +178,7 @@ class Gomoku {
             val value = if (checkWin(i % N, i / N, WHITE)) {
                 WIN_SCORE
             } else {
-                search(HARD_DEPTH - 1, false, -INF, INF)
+                search(HARD_DEPTH - 1, false, -INF, INF, HARD_BRANCH)
             }
             cells[i] = EMPTY
             if (value > bestValue) {
@@ -162,8 +189,259 @@ class Gomoku {
         return bestIdx
     }
 
-    /** 只考虑已有棋子两格内的空点，并按启发分排序，取前 HARD_BRANCH 个。 */
-    private fun orderedCandidates(): List<Int> {
+    private fun search(depth: Int, maximizing: Boolean, alpha: Int, beta: Int, limit: Int): Int {
+        if (depth <= 0 || System.nanoTime() > searchDeadline) return evaluate()
+        val cands = orderedCandidates(limit)
+        if (cands.isEmpty()) return evaluate()
+        var a = alpha
+        var b = beta
+        if (maximizing) {
+            for (i in cands) {
+                cells[i] = WHITE
+                val v = if (checkWin(i % N, i / N, WHITE)) {
+                    WIN_SCORE - (DEBUG_DEPTH - depth)
+                } else {
+                    search(depth - 1, false, a, b, limit)
+                }
+                cells[i] = EMPTY
+                if (v > a) a = v
+                if (a >= b) return a
+            }
+            return a
+        }
+        for (i in cands) {
+            cells[i] = BLACK
+            val v = if (checkWin(i % N, i / N, BLACK)) {
+                -(WIN_SCORE - (DEBUG_DEPTH - depth))
+            } else {
+                search(depth - 1, true, a, b, limit)
+            }
+            cells[i] = EMPTY
+            if (v < b) b = v
+            if (b <= a) return b
+        }
+        return b
+    }
+
+    // ---------------- 隐藏难度（组合棋型 + VCF/VCT + 深层搜索） ----------------
+
+    private fun debugPick(empties: List<Int>): Int {
+        searchDeadline = System.nanoTime() + DEBUG_TIME_MS * 1_000_000
+
+        val myWin = winningPoints(WHITE)
+        if (myWin.isNotEmpty()) return myWin[0]
+        val oppWin = winningPoints(BLACK)
+        if (oppWin.isNotEmpty()) return oppWin[0]
+
+        val vcf = vcfMove(WHITE, VCF_DEPTH)
+        if (vcf >= 0) return vcf
+
+        val vct = vctMove(WHITE, 2)
+        if (vct >= 0) return vct
+
+        val block = blockOpponentShape()
+        if (block >= 0) return block
+
+        val cands = orderedCandidates(DEBUG_BRANCH)
+        if (cands.isEmpty()) return empties[Random.nextInt(empties.size)]
+        var bestIdx = cands[0]
+        var bestValue = -INF
+        for (i in cands) {
+            cells[i] = WHITE
+            val value = if (checkWin(i % N, i / N, WHITE)) {
+                WIN_SCORE
+            } else {
+                search(DEBUG_DEPTH - 1, false, -INF, INF, DEBUG_BRANCH)
+            }
+            cells[i] = EMPTY
+            if (value > bestValue) {
+                bestValue = value
+                bestIdx = i
+            }
+            if (System.nanoTime() > searchDeadline) break
+        }
+        return bestIdx
+    }
+
+    private fun other(color: Int) = if (color == BLACK) WHITE else BLACK
+
+    /** 某方向的棋型等级（把 (x,y) 当作刚落下的子）。 */
+    private fun dirLevel(x: Int, y: Int, dx: Int, dy: Int, color: Int): Int {
+        var len = 1
+        var i = x + dx
+        var j = y + dy
+        while (i in 0 until N && j in 0 until N && cells[j * N + i] == color) {
+            len++
+            i += dx
+            j += dy
+        }
+        val open1 = i in 0 until N && j in 0 until N && cells[j * N + i] == EMPTY
+        i = x - dx
+        j = y - dy
+        while (i in 0 until N && j in 0 until N && cells[j * N + i] == color) {
+            len++
+            i -= dx
+            j -= dy
+        }
+        val open2 = i in 0 until N && j in 0 until N && cells[j * N + i] == EMPTY
+        val open = (if (open1) 1 else 0) + (if (open2) 1 else 0)
+        return when {
+            len >= 5 -> LV_FIVE
+            len == 4 -> if (open >= 2) LV_OPEN_FOUR else if (open == 1) LV_FOUR else LV_NONE
+            len == 3 -> if (open >= 2) LV_OPEN_THREE else if (open == 1) LV_SLEEP_THREE else LV_NONE
+            len == 2 -> if (open >= 2) LV_OPEN_TWO else if (open == 1) LV_TWO else LV_NONE
+            else -> if (open >= 2) LV_ONE else LV_NONE
+        }
+    }
+
+    /** 临时在 i 落子后，四个方向的等级。 */
+    private fun shapeAfter(i: Int, color: Int): IntArray {
+        cells[i] = color
+        val x = i % N
+        val y = i / N
+        val levels = IntArray(4)
+        for (d in DIRS.indices) {
+            val dir = DIRS[d]
+            levels[d] = dirLevel(x, y, dir.first, dir.second, color)
+        }
+        cells[i] = EMPTY
+        return levels
+    }
+
+    private fun maxLevel(levels: IntArray): Int {
+        var m = 0
+        for (l in levels) if (l > m) m = l
+        return m
+    }
+
+    private fun countLevel(levels: IntArray, level: Int): Int {
+        var c = 0
+        for (l in levels) if (l == level) c++
+        return c
+    }
+
+    /** 落子后是否形成"必胜形状"：五 / 活四 / 双四 / 四三 / 双活三。 */
+    private fun isWinShape(levels: IntArray): Boolean {
+        if (maxLevel(levels) >= LV_FIVE) return true
+        if (countLevel(levels, LV_OPEN_FOUR) >= 1) return true
+        val fours = countLevel(levels, LV_FOUR)
+        val openThrees = countLevel(levels, LV_OPEN_THREE)
+        if (fours >= 2) return true
+        if (fours >= 1 && openThrees >= 1) return true
+        if (openThrees >= 2) return true
+        return false
+    }
+
+    private fun winningPoints(color: Int): List<Int> {
+        val out = ArrayList<Int>()
+        for (i in cells.indices) {
+            if (cells[i] != EMPTY) continue
+            if (pointScore(i % N, i / N, color) >= 2_000_000) out.add(i)
+        }
+        return out
+    }
+
+    /** 落子后能形成四（冲四/活四）的点。 */
+    private fun fourThreats(color: Int, limit: Int = 24): List<Int> {
+        val out = ArrayList<Int>()
+        for (i in cells.indices) {
+            if (cells[i] != EMPTY) continue
+            val levels = shapeAfter(i, color)
+            if (countLevel(levels, LV_FOUR) + countLevel(levels, LV_OPEN_FOUR) >= 1) out.add(i)
+            if (out.size >= limit) break
+        }
+        return out
+    }
+
+    /** 候选威胁手（活三及以上），带启发排序。 */
+    private fun threatCandidates(color: Int, limit: Int = DEBUG_BRANCH * 2): List<Int> {
+        val out = ArrayList<Int>()
+        for (i in cells.indices) {
+            if (cells[i] != EMPTY) continue
+            if (pointScore(i % N, i / N, color) >= 500) out.add(i)
+        }
+        return out.sortedByDescending { pointScore(it % N, it / N, color) }.take(limit)
+    }
+
+    /** 连续冲四算杀：返回制胜首着，-1 表示没找到。 */
+    private fun vcfMove(color: Int, depth: Int): Int {
+        val wins = winningPoints(color)
+        if (wins.isNotEmpty()) return wins.first()
+        if (depth <= 0 || System.nanoTime() > searchDeadline) return -1
+        for (i in fourThreats(color)) {
+            cells[i] = color
+            val myWins = winningPoints(color)
+            var ok = false
+            if (myWins.size >= 2) {
+                ok = true
+            } else if (myWins.size == 1 && winningPoints(other(color)).isEmpty()) {
+                val block = myWins[0]
+                cells[block] = other(color)
+                ok = vcfMove(color, depth - 1) >= 0
+                cells[block] = EMPTY
+            }
+            cells[i] = EMPTY
+            if (ok) return i
+        }
+        return -1
+    }
+
+    /** 有限威胁算杀（含活四/双活三/四三），返回制胜首着，-1 表示没找到。 */
+    private fun vctMove(color: Int, depth: Int): Int {
+        if (System.nanoTime() > searchDeadline) return -1
+        val wins = winningPoints(color)
+        if (wins.isNotEmpty()) return wins.first()
+        val opp = other(color)
+        for (i in threatCandidates(color)) {
+            val levels = shapeAfter(i, color)
+            if (!isWinShape(levels)) continue
+            cells[i] = color
+            val safe = winningPoints(opp).isEmpty() && fourThreats(opp, 4).isEmpty()
+            cells[i] = EMPTY
+            if (safe) return i
+        }
+        if (depth <= 1) return -1
+        for (i in threatCandidates(color)) {
+            if (maxLevel(shapeAfter(i, color)) < LV_OPEN_THREE) continue
+            cells[i] = color
+            val follow = winShapePoint(color)
+            val oppSafe = winningPoints(opp).isEmpty()
+            cells[i] = EMPTY
+            if (follow >= 0 && oppSafe) return i
+        }
+        return -1
+    }
+
+    private fun winShapePoint(color: Int): Int {
+        for (i in threatCandidates(color)) {
+            if (isWinShape(shapeAfter(i, color))) return i
+        }
+        return -1
+    }
+
+    /** 对手一手能形成必胜形状时，先堵该点。 */
+    private fun blockOpponentShape(): Int {
+        val opp = BLACK
+        var fallback = -1
+        var fallbackLevel = 0
+        for (i in cells.indices) {
+            if (cells[i] != EMPTY) continue
+            if (pointScore(i % N, i / N, opp) < 500) continue
+            val levels = shapeAfter(i, opp)
+            if (isWinShape(levels)) return i
+            val lv = maxLevel(levels)
+            if (lv > fallbackLevel) {
+                fallbackLevel = lv
+                fallback = i
+            }
+        }
+        return fallback
+    }
+
+    // ---------------- 通用：候选 / 评估 ----------------
+
+    /** 只考虑已有棋子两格内的空点，按启发分排序取前 limit 个。 */
+    private fun orderedCandidates(limit: Int): List<Int> {
         val set = LinkedHashSet<Int>()
         for (y in 0 until N) {
             for (x in 0 until N) {
@@ -182,41 +460,7 @@ class Gomoku {
         if (set.isEmpty()) return emptyList()
         return set
             .sortedByDescending { pointScore(it % N, it / N, WHITE) + pointScore(it % N, it / N, BLACK) }
-            .take(HARD_BRANCH)
-    }
-
-    private fun search(depth: Int, maximizing: Boolean, alpha: Int, beta: Int): Int {
-        if (depth <= 0) return evaluate()
-        val cands = orderedCandidates()
-        if (cands.isEmpty()) return evaluate()
-        var a = alpha
-        var b = beta
-        if (maximizing) {
-            for (i in cands) {
-                cells[i] = WHITE
-                val v = if (checkWin(i % N, i / N, WHITE)) {
-                    WIN_SCORE - (HARD_DEPTH - depth)
-                } else {
-                    search(depth - 1, false, a, b)
-                }
-                cells[i] = EMPTY
-                if (v > a) a = v
-                if (a >= b) return a
-            }
-            return a
-        }
-        for (i in cands) {
-            cells[i] = BLACK
-            val v = if (checkWin(i % N, i / N, BLACK)) {
-                -(WIN_SCORE - (HARD_DEPTH - depth))
-            } else {
-                search(depth - 1, true, a, b)
-            }
-            cells[i] = EMPTY
-            if (v < b) b = v
-            if (b <= a) return b
-        }
-        return b
+            .take(limit)
     }
 
     private fun evaluate(): Int {

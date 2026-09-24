@@ -1,5 +1,6 @@
 package com.tntxiaojia.minigames.ui
 
+import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,15 +30,16 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tntxiaojia.minigames.ui.theme.Background
 import com.tntxiaojia.minigames.ui.theme.TextPrimary
-import com.tntxiaojia.minigames.ui.theme.TextSecondary
 
 @Composable
 fun MainScreen(onPick: (GameId) -> Unit) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -45,7 +47,6 @@ fun MainScreen(onPick: (GameId) -> Unit) {
     ) {
         Column(Modifier.padding(start = 16.dp, top = 6.dp, end = 16.dp)) {
             Text("小游戏合集", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
-            Text("选择一款游戏开始", color = TextSecondary, fontSize = 7.sp)
         }
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -56,6 +57,11 @@ fun MainScreen(onPick: (GameId) -> Unit) {
         ) {
             items(GameId.entries) { game ->
                 GameCard(game = game, onClick = { onPick(game) })
+            }
+            item {
+                InfoCard("关于", Color(0xFF90A4AE)) {
+                    context.startActivity(Intent(context, AboutActivity::class.java))
+                }
             }
         }
     }
@@ -87,6 +93,32 @@ private fun GameCard(game: GameId, onClick: () -> Unit) {
         }
         Spacer(Modifier.height(7.dp))
         Text(game.title, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun InfoCard(title: String, accent: Color, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(106.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(accent.copy(alpha = 0.13f))
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(accent.copy(alpha = 0.24f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("i", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(7.dp))
+        Text(title, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

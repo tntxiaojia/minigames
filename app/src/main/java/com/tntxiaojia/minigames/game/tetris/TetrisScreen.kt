@@ -191,13 +191,13 @@ private fun DrawScope.drawTetris(view: View, tm: TextMeasurer) {
     val panelW = side - panelX - side * 0.02f
     val labelStyle = TextStyle(color = TextSecondary, fontSize = (panelW * 0.3f).toSp(), fontWeight = FontWeight.Bold)
     val label = tm.measure(AnnotatedString("下一块"), labelStyle)
-    drawText(label, topLeft = Offset(panelX + (panelW - label.size.width) / 2f, side * 0.08f))
+    drawText(label, topLeft = Offset(panelX + (panelW - label.size.width) / 2f, side * 0.2f))
 
     val mc = panelW / 4.2f
     val cellsW = (view.next.maxOfOrNull { it.first } ?: 3) + 1
     val cellsH = (view.next.maxOfOrNull { it.second } ?: 3) + 1
     val startX = panelX + (panelW - cellsW * mc) / 2f
-    val startY = side * 0.24f
+    val startY = side * 0.36f
     for ((nx, ny) in view.next) {
         drawRoundRect(
             PIECE_COLORS[(view.nextColor - 1) % PIECE_COLORS.size],

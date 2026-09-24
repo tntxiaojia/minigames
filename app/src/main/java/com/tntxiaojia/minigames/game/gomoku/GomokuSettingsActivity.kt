@@ -7,7 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -115,9 +116,9 @@ private fun GomokuSettingsScreen(
         Text("对局模式", color = TextSecondary, fontSize = 12.sp)
         Spacer(Modifier.height(6.dp))
         Row(Modifier.horizontalScroll(rememberScrollState())) {
-            OptionChip("人机", mode == Gomoku.Mode.HUMAN_AI.ordinal) { mode = Gomoku.Mode.HUMAN_AI.ordinal }
+            OptionChip("人机", mode == Gomoku.Mode.HUMAN_AI.ordinal, onClick = { mode = Gomoku.Mode.HUMAN_AI.ordinal })
             Spacer(Modifier.width(8.dp))
-            OptionChip("双人", mode == Gomoku.Mode.HUMAN_HUMAN.ordinal) { mode = Gomoku.Mode.HUMAN_HUMAN.ordinal }
+            OptionChip("双人", mode == Gomoku.Mode.HUMAN_HUMAN.ordinal, onClick = { mode = Gomoku.Mode.HUMAN_HUMAN.ordinal })
         }
 
         if (mode == Gomoku.Mode.HUMAN_AI.ordinal) {
@@ -125,17 +126,29 @@ private fun GomokuSettingsScreen(
             Text("电脑难度", color = TextSecondary, fontSize = 12.sp)
             Spacer(Modifier.height(6.dp))
             Row(Modifier.horizontalScroll(rememberScrollState())) {
-                OptionChip("简单", difficulty == Gomoku.Difficulty.EASY.ordinal) {
-                    difficulty = Gomoku.Difficulty.EASY.ordinal
-                }
+                OptionChip(
+                    "简单",
+                    difficulty == Gomoku.Difficulty.EASY.ordinal,
+                    onClick = { difficulty = Gomoku.Difficulty.EASY.ordinal }
+                )
                 Spacer(Modifier.width(8.dp))
-                OptionChip("普通", difficulty == Gomoku.Difficulty.NORMAL.ordinal) {
-                    difficulty = Gomoku.Difficulty.NORMAL.ordinal
-                }
+                OptionChip(
+                    "普通",
+                    difficulty == Gomoku.Difficulty.NORMAL.ordinal,
+                    onClick = { difficulty = Gomoku.Difficulty.NORMAL.ordinal }
+                )
                 Spacer(Modifier.width(8.dp))
-                OptionChip("困难", difficulty == Gomoku.Difficulty.HARD.ordinal) {
-                    difficulty = Gomoku.Difficulty.HARD.ordinal
-                }
+                OptionChip(
+                    "困难",
+                    difficulty == Gomoku.Difficulty.HARD.ordinal ||
+                        difficulty == Gomoku.Difficulty.DEBUG.ordinal,
+                    onClick = { difficulty = Gomoku.Difficulty.HARD.ordinal },
+                    onLongPress = { difficulty = Gomoku.Difficulty.DEBUG.ordinal }
+                )
+            }
+            if (difficulty == Gomoku.Difficulty.DEBUG.ordinal) {
+                Spacer(Modifier.height(6.dp))
+                Text("已启用隐藏难度 debug", color = Color(0xFFFF5252), fontSize = 11.sp)
             }
         }
 
@@ -154,7 +167,12 @@ private fun GomokuSettingsScreen(
 }
 
 @Composable
-private fun OptionChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun OptionChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
+) {
     val bg = if (selected) Color(0xFF4DD0E1) else Color(0xFF2A3340)
     val fg = if (selected) Color.Black else Color(0xFFE6EAF0)
     Box(
@@ -162,7 +180,13 @@ private fun OptionChip(label: String, selected: Boolean, onClick: () -> Unit) {
             .height(46.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(bg)
-            .clickable(onClick = onClick),
+            .pointerInput(onLongPress) {
+                if (onLongPress == null) {
+                    detectTapGestures(onTap = { onClick() })
+                } else {
+                    detectTapGestures(onTap = { onClick() }, onLongPress = { onLongPress() })
+                }
+            },
         contentAlignment = Alignment.Center
     ) {
         Text(label, color = fg, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 14.dp))

@@ -142,6 +142,7 @@ fun GomokuScreen(onExit: () -> Unit) {
         }
 
         // 设置入口：屏幕最右上角
+        val debug = v.difficulty == Gomoku.Difficulty.DEBUG
         TextButton(
             onClick = {
                 val intent = Intent(context, GomokuSettingsActivity::class.java)
@@ -156,7 +157,12 @@ fun GomokuScreen(onExit: () -> Unit) {
                 .align(Alignment.TopEnd)
                 .height(30.dp)
         ) {
-            Text("设置", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(
+                if (debug) "debug" else "设置",
+                color = if (debug) Color.Red else Color.Black,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         EndOverlay(
