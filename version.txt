@@ -1,2 +1,3 @@
-versioncode=1
+versioncode=2
+lastestversion=1.2
 versioninfo=null
